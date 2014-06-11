@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/graphics">
+        <file alias="wait.gif">busy.gif</file>
+    </qresource>
+</RCC>
