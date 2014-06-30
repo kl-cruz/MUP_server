@@ -42,16 +42,9 @@ public slots:
     void onPortNameChanged(const QString &name);
     void onBaudRateChanged(int idx);
     void onOpenCloseButtonClicked();
-    void onServerStartStopButtonClicked();
 
-    void prepareReadData();
-    void updateData();
-    void clearData();
-    void changedClientHandle();
-
-    void nodeChanged(int idx);
-    QString transtaleDataFromNode(QPair<QString,QString> data);
-
+    void changedClientHandle(char client);
+    void readClientHandle(char client);
 
     void onPortAddedOrRemoved();
 private slots:
@@ -70,28 +63,13 @@ private:
 
     QStatusBar *statusBar;
 
-    //starttab
-    QWidget *serverTab;
+
     QLabel *serverClientsLabel;
     QLabel *serverClientsValueLabel;
 
-    QLabel *serverOpenClosePortLabel;
-    QPushButton *serverStartStopButton;
-    QFormLayout *serverTabLayout;
+    QLabel *devValueLabel;
+    QLabel *devValueValueLabel;
 
-    //nodestab
-    QWidget *nodesTab;
-    QComboBox *nodesBox;
-    QListView *nodeSensorsInfoListView;
-    QScrollBar *nodeSensorsInfoScrollBar;
-    QFormLayout* nodesTabLayout;
-    QPushButton *clearMeasureButton;
-    QLabel *lastMeasureLabel;
-
-
-
-    void teachConsoleAddText(QString text);
-    void teachConsoleAddOnlyPlainText(QString text);
 
     //OptionsTab
     QWidget *optionsTab;
@@ -130,6 +108,7 @@ private:
 
     QList<nodeData> nodes;
     QByteArray *readData;
+    QString fromPort;
 };
 
 #endif // MAINWINDOW_H

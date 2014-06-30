@@ -1,5 +1,15 @@
 #include "server.h"
 
+
+qreal server::getData() const
+{
+    return data;
+}
+
+void server::setData(const qreal &value)
+{
+    data = value;
+}
 server::server()
 {
     isStart=0;
@@ -16,10 +26,10 @@ bool server::isServerStarted()
 int server::serverStart()
 {
     if (!tcpServer->listen(QHostAddress::Any, port))
-       {
-            isStart=0;
-            return -1;
-       }
+    {
+        isStart=0;
+        return -1;
+    }
     isStart=1;
     return 0;
 }
@@ -49,24 +59,36 @@ void server::addClient()
     /*connect(client, SIGNAL(disconnected()), this, SLOT(removeClient()));*/
     connect(client, SIGNAL(disconnected()), this, SLOT(removeClient()));
     connect(client, SIGNAL(readyRead()), this, SLOT(parseData()));
-    emit changedClient();
-    /*QByteArray data;
-    QDataStream out(&data, QIODevice::WriteOnly);
-    client->write(data);*/
+    char clientID=(clientsList.indexOf(client))+49;
+    emit changedClient(clientID);
 }
 
 void server::parseData()
 {
     QTcpSocket *client = (QTcpSocket*) sender();
-    qDebug() << "New request from:" << client->peerAddress();
-    qreal dane=random()/100000;
-    qDebug() << "sending:" << dane;
+    if(clientsList.indexOf(client)>4){
+        client->close();
+        client->disconnect();
+        return;
+    }
+    QByteArray clientData=client->readLine();
 
-    QByteArray data;
-       QDataStream out(client);
-       out.setVersion(QDataStream::Qt_4_6);
-       out<<dane;
-       client->write(data);
+    qDebug() << "New data:" << clientData;
+    if(clientData==QByteArray("ok")){
+        char clientID=(clientsList.indexOf(client))+49;
+        emit readDataByClient(clientID);
+        qDebug() << "client:" << clientID;
+        return;
+    }
+    qDebug() << "New request from:" << client->peerAddress();
+    qDebug() << "sending:" << data;
+
+    QByteArray data_to_send;
+    QDataStream out(&data_to_send, QIODevice::WriteOnly);
+    out.setVersion(QDataStream::Qt_4_6);
+
+    out<<data;
+    client->write(data_to_send);
 }
 
 void server::removeClient()
@@ -75,5 +97,6 @@ void server::removeClient()
     int index = clientsList.indexOf(client);
     clientsList.removeAt(index);
     qDebug() << "removed client:" << client->peerAddress() ;
-    emit changedClient();
+    char clientID=(clientsList.indexOf(client))+49+6;
+    emit changedClient(clientID);
 }

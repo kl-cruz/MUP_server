@@ -3,6 +3,7 @@
 #include "qextserialenumerator.h"
 #include "iostream"
 #include <QMessageBox>
+#include <qthread.h>
 
 #include "src/qextserialport.h"
 MainWindow::MainWindow(QWidget *parent) :
@@ -57,7 +58,6 @@ void MainWindow::fillStatusTab(bool status)
 
 void MainWindow::startConnection()
 {
-    nodesTab->setEnabled(true);
     portBox->setEnabled(false);
     baudRateBox->setEnabled(false);
     fillStatusTab(true);
@@ -66,7 +66,6 @@ void MainWindow::startConnection()
 
 void MainWindow::stopConnection()
 {
-    nodesTab->setEnabled(false);
     portBox->setEnabled(true);
     baudRateBox->setEnabled(true);
     fillStatusTab(false);
@@ -75,9 +74,20 @@ void MainWindow::stopConnection()
 void MainWindow::onReadyRead()
 {
     if (port->bytesAvailable()) {
-        //QString fromPort=QString::fromLatin1(port->readAll());
-        readData->append(port->readAll());
-        prepareReadData();
+        fromPort+=QString::fromLatin1(port->readAll());
+    }
+    QString test=fromPort.simplified();
+
+    QRegExp rx(".*rh=\\[([-+]?\\d+[.]?\\d+)\\]");
+    int pos = 0;
+
+    while ((pos = rx.indexIn(test, pos)) != -1) {
+        fromPort="";
+        if(tcpServer){
+            tcpServer->setData(rx.cap(1).toDouble());
+            devValueValueLabel->setText(rx.cap(1));
+        }
+        pos += rx.matchedLength();
     }
 }
 
@@ -120,6 +130,15 @@ void MainWindow::onOpenCloseButtonClicked()
         openClosePortButton->setText("Zakończ transmisję");
         tabWidget->setCurrentIndex(2);
         startConnection();
+        if(tcpServer->isServerStarted())
+        {
+            tcpServer->serverStop();
+            statusBar->showMessage("Wyłączono serwer");
+        } else {
+            tcpServer->serverStart();
+            statusBar->showMessage("Uruchomiono serwer");
+            tcpServer->setData(2.534);
+        }
         }
         else
         {
@@ -132,6 +151,8 @@ void MainWindow::onOpenCloseButtonClicked()
         statusBar->showMessage("Port jest zamknięty");
         openClosePortButton->setText("Uruchom transmisję");
         stopConnection();
+        tcpServer->serverStop();
+        statusBar->showMessage("Wyłączono serwer");
     }
 
     if (port->isOpen() && port->queryMode() == QextSerialPort::Polling)
@@ -140,214 +161,37 @@ void MainWindow::onOpenCloseButtonClicked()
         timer->stop();
 }
 
-void MainWindow::onServerStartStopButtonClicked()
-{
 
-    if(tcpServer->isServerStarted())
-    {
-        tcpServer->serverStop();
-        statusBar->showMessage("WYłączono serwer");
-        serverStartStopButton->setText("Uruchom serwer");
-    } else {
-        tcpServer->serverStart();
-        statusBar->showMessage("Uruchomiono serwer");
-        serverStartStopButton->setText("Wyłącz serwer");
-    }
-
-}
-
-void MainWindow::prepareReadData()
-{
-    //prepare data
-    int startFrom=readData->indexOf('!',0);
-    if(startFrom==-1)
-        return;
-    readData->remove(0,startFrom);
-    readData->squeeze();
-
-    QString ipAddress;
-    QString sensorNumberValue;
-    QString sensorValue;
-    int howMuch=readData->count();
-    int i;
-    for(i=0;i<howMuch;++i)
-    {
-        int newData=readData->indexOf('!',i+1);
-        if(newData==-1)
-            break;
-        char readChar=readData->at(i);
-        if(readChar!='!')
-            break;
-        while(true)
-        {
-
-            ++i;
-            if(i>=howMuch)
-                break;
-            readChar=readData->at(i);
-            if(readChar!='>')
-                ipAddress.append(QChar(readChar));
-            else
-                break;
-        }
-
-        while(true)
-        {
-            ++i;
-            if(i>=howMuch)
-                break;
-            readChar=readData->at(i);
-            if(readChar!=':')
-                sensorNumberValue.append(QChar(readChar));
-            else
-                break;
-        }
-        while(true)
-        {
-            ++i;
-            if(i>=howMuch)
-                break;
-            readChar=readData->at(i);
-            if(readChar!='<')
-                sensorValue.append(QChar(readChar));
-            else
-                break;
-        }
-        if(i>=howMuch)
-            break;
-        //add od update data
-        bool isExists=false;
-        bool isExistsValue=false;
-        int j;
-        for(j=0;j<nodes.count();++j)
-        {
-            if(nodes[j].IP.compare(ipAddress)==0){
-                isExists=true;
-                break;}
-        }
-        if(isExists){
-            int k;
-            for(k=0;k<nodes[j].data.count();++k)
-            {
-                if(nodes[j].data[k].first==sensorNumberValue){
-                    isExistsValue=true;
-                    break;}
-            }
-            if(isExistsValue)
-            {
-                nodes[j].data[k].second=sensorValue;
-            }
-            else
-            {
-
-                nodes[j].data.append(qMakePair(sensorNumberValue,sensorValue));
-            }
-            nodes[j].lastMeasure=QDateTime::currentDateTime();
-        }
-        else{
-            nodes.append(nodeData());
-            nodes[nodes.count()-1].IP=ipAddress;
-            nodes[nodes.count()-1].data.append(qMakePair(sensorNumberValue,sensorValue));
-            nodes[nodes.count()-1].lastMeasure=QDateTime::currentDateTime();
-        }
-
-    }
-
-
-    readData->remove(0,i);
-    readData->squeeze();
-    updateData();
-
-}
-
-void MainWindow::updateData()
-{
-    //nodesBox->clear();
-    for(int i=0;i<nodes.count();++i)
-    {
-        bool isExists=false;
-        for(int j=0;j<nodesBox->count();++j)
-        {
-            if(nodesBox->itemText(j).compare(nodes[i].IP)==0)
-                isExists=true;
-        }
-        if(!isExists)
-            nodesBox->addItem(nodes[i].IP,i);
-    }
-    nodeChanged(nodesBox->currentIndex());
-}
-
-void MainWindow::clearData()
-{
-    nodes.clear();
-    nodesBox->clear();
-    QStringList list;
-    QStringListModel *model = new QStringListModel;
-    model->setStringList(list);
-    nodeSensorsInfoListView->setModel(model);
-    lastMeasureLabel->setText("");
-}
-
-void MainWindow::changedClientHandle()
+void MainWindow::changedClientHandle(char client)
 {
     QString str;
 
     str.append(QString("%1").arg(tcpServer->clientsValue()));
     serverClientsValueLabel->setText(str);
+    qDebug() << "client changed Handle:" << client;
+    char clear=49+6;
+    port->write(&clear,1);
+    clear++;
+    port->write(&clear,1);
+    clear++;
+    port->write(&clear,1);
+    clear++;
+    port->write(&clear,1);
+    clear++;
+    port->write(&clear,1);
+    port->write(&client,1);
+
 }
 
-void MainWindow::nodeChanged(int idx)
+void MainWindow::readClientHandle(char client)
 {
-    QStringList list;
-    if(idx=-1){
-        if(nodesBox->count()>0)
-            idx=0;
-        else
-            return;
-    }
-    for(int i=0;i<nodes[nodesBox->currentIndex()].data.count();++i)
-    {
-        list << transtaleDataFromNode(nodes[nodesBox->currentIndex()].data[i]);
-    }
-    QStringListModel *model = new QStringListModel;
-    model->setStringList(list);
-    nodeSensorsInfoListView->setModel(model);
-    lastMeasureLabel->setText(nodes[nodesBox->currentIndex()].lastMeasure.toString());
+    qDebug() << "client change:" << client;
+    client+=5;
+    port->write(&client,1);
+    QThread::msleep ( 100 ) ;
+    client-=5;
+    port->write(&client,1);
 }
-
-QString MainWindow::transtaleDataFromNode(QPair<QString, QString> data)
-{
-    int indexData=data.first.toInt();
-    QString result="";
-    switch (indexData){
-        case 0:
-        result="Nazwa node'a:                                "+data.second;
-            break;
-    case 1:
-        result="Temperatura mikrokontrolera: "+data.second+"\u2103";
-        break;
-    case 2:
-        result="Temperatura 1:                               "+data.second+"\u2103";
-        break;
-    case 3:
-        result="Temperatura 2:                               "+data.second+"\u2103";
-        break;
-    case 4:
-        result="Temperatura 3:                               "+data.second+"\u2103";
-        break;
-    case 5:
-        result="Temperatura 4:                               "+data.second+"\u2103";
-        break;
-    case 6:
-        result="Wilgotność 1:                                  "+data.second+"%";
-        break;
-    case 7:
-        result="Wilgotność 2:                                  "+data.second+"%";
-        break;
-    }
-    return result;
-}
-
 void MainWindow::createUI()
 {
     /*Create canvas form*/
@@ -355,7 +199,7 @@ void MainWindow::createUI()
     if (this->objectName().isEmpty())
         this->setObjectName(QStringLiteral("MainWindow"));
     this->resize(640, 700);
-    QString windowTitle="SMIW";
+    QString windowTitle="MUP Server";
     this->setWindowTitle(QApplication::translate("MainWindow", windowTitle.toStdString().c_str(), 0));
 
     //end
@@ -377,27 +221,6 @@ void MainWindow::createUI()
     tabWidget = new QTabWidget(centralWidget);
     tabWidget->setObjectName(QStringLiteral("tabWidget"));
 
-    //start tab
-    serverTab=new QWidget();
-    serverTab->setObjectName(QStringLiteral("serverTab"));
-    tabWidget->addTab(serverTab, QString());
-    tabWidget->setTabText(tabWidget->indexOf(serverTab), QApplication::translate("MainWindow", "Witaj!", 0));
-
-
-    serverOpenClosePortLabel=new QLabel("Uruchamianie serwera");
-
-    serverClientsLabel=new QLabel("Podłączonych klientów");
-    serverClientsValueLabel=new QLabel("0");
-
-    serverStartStopButton = new QPushButton("Uruchom serwer");
-
-    serverTabLayout=new QFormLayout();
-    serverTabLayout->addRow(new QLabel("Połączenie z serwerem"));
-    serverTabLayout->addRow(serverOpenClosePortLabel,serverStartStopButton);
-    serverTabLayout->addRow(serverClientsLabel,serverClientsValueLabel);
-    serverTab->setLayout(serverTabLayout);
-
-
 
     //options tab
     optionsTab=new QWidget();
@@ -416,40 +239,23 @@ void MainWindow::createUI()
 
     portBox= new QComboBox();
 
-    openClosePortButton = new QPushButton("Uruchom transmisję");
+    serverClientsLabel=new QLabel("Podłączonych klientów");
+    serverClientsValueLabel=new QLabel("0");
+
+    devValueLabel=new QLabel("Obecny odczyt z czujnika");
+    devValueValueLabel=new QLabel("0.00");
+
+    openClosePortButton = new QPushButton("Uruchom serwer");
 
     optionsLayout=new QFormLayout;
     optionsLayout->addRow(new QLabel("Opcje połączenia RS232"));
     optionsLayout->addRow(portLabel,portBox);
     optionsLayout->addRow(baudRateLabel,baudRateBox);
+    optionsLayout->addRow(serverClientsLabel,serverClientsValueLabel);
+    optionsLayout->addRow(devValueLabel,devValueValueLabel);
     optionsLayout->addRow(openClosePortLabel,openClosePortButton);
+
     optionsTab->setLayout(optionsLayout);
-
-
-    //nodetab
-    nodesTab=new QWidget();
-    nodesTab->setObjectName(QStringLiteral("nodesTab"));
-    nodesTab->setEnabled(false);
-    tabWidget->addTab(nodesTab, QString());
-    tabWidget->setTabText(tabWidget->indexOf(nodesTab), QApplication::translate("MainWindow", "nodesTab", 0));
-
-    nodesBox=new QComboBox();
-    lastMeasureLabel=new QLabel();
-
-    nodeSensorsInfoListView=new QListView();
-    nodeSensorsInfoScrollBar=new QScrollBar(nodeSensorsInfoListView);
-    nodeSensorsInfoListView->setVerticalScrollBar(nodeSensorsInfoScrollBar);
-
-    clearMeasureButton=new QPushButton();
-    clearMeasureButton->setText("Wyczyść wszystkie odczyty");
-
-    nodesTabLayout=new QFormLayout;
-    nodesTabLayout->addRow(new QLabel("Węzeł o IP:"),nodesBox);
-    nodesTabLayout->addRow(new QLabel("Ostatni odczyt:"),lastMeasureLabel);
-    nodesTabLayout->addRow(new QLabel("Informacje z węzła:"),nodeSensorsInfoListView);
-    nodesTabLayout->addRow(new QLabel(""),clearMeasureButton);
-
-    nodesTab->setLayout(nodesTabLayout);
 
     //portinfo
     portinfoTab=new QWidget();
@@ -486,8 +292,6 @@ void MainWindow::createUI()
     this->setStatusBar(statusBar);
     statusBar->showMessage("Program gotowy do pracy");
 
-    //QMetaObject::connectSlotsByName(this);
-
     fillControls();
 
     timer = new QTimer(this);
@@ -505,7 +309,6 @@ void MainWindow::createUI()
     connect(baudRateBox, SIGNAL(currentIndexChanged(int)), SLOT(onBaudRateChanged(int)));
     connect(portBox, SIGNAL(editTextChanged(QString)), SLOT(onPortNameChanged(QString)));
     connect(openClosePortButton, SIGNAL(clicked()), SLOT(onOpenCloseButtonClicked()));
-    connect(serverStartStopButton, SIGNAL(clicked()), SLOT(onServerStartStopButtonClicked()));
 
     if(port->queryMode()==QextSerialPort::Polling){
         connect(timer, SIGNAL(timeout()), SLOT(onReadyRead()));
@@ -514,15 +317,15 @@ void MainWindow::createUI()
 
     connect(enumerator, SIGNAL(deviceDiscovered(QextPortInfo)), SLOT(onPortAddedOrRemoved()));
     connect(enumerator, SIGNAL(deviceRemoved(QextPortInfo)), SLOT(onPortAddedOrRemoved()));
-    connect(nodesBox, SIGNAL(currentIndexChanged(int)),SLOT(nodeChanged(int)));
-    connect(clearMeasureButton,SIGNAL(clicked()),SLOT(clearData()));
 
 }
 
 void MainWindow::prepareServer()
 {
     tcpServer = new server();
-    connect(tcpServer, SIGNAL(changedClient()),SLOT(changedClientHandle()));
+    connect(tcpServer, SIGNAL(changedClient(char)),SLOT(changedClientHandle(char)));
+    connect(tcpServer, SIGNAL(readDataByClient(char)),SLOT(readClientHandle(char)));
+
 
 }
 
